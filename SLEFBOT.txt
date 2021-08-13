@@ -1,0 +1,263 @@
+import discord, uuid, requests, time, paramiko, json, os, sys
+from datetime import datetime
+from datetime import timedelta
+from discord.ext import commands 
+from discord.ext.commands import cooldown
+from discord.ext import tasks
+from discord.ext.commands import BucketType
+from discord.ext.commands import (CommandOnCooldown)
+from discord.ext import commands
+from discord.ext.commands import has_permissions
+from discord.ext.commands import has_role
+
+bot = commands.Bot(".", self_bot=True)
+
+cmds = ['.payments', '.api', '.hub', '.vpn', '.token', '.contact', '.afk', '.hwid', '.updatePlan', '.ban', '.unban', '.updateLevel', '.options']
+
+DiscordName = "discord#0000"
+autoReply = False
+replyList = []
+DiscToken = ""
+InviteLink = "discord invite"
+
+class Safeguard:
+    UpdateToken = "https://safeguardauth.us/api//UpdateToken"
+
+    Username = ""
+    Password = ""
+    ProgramID = ""
+    DownloadLink = ""
+    PrintOption = ""
+    ProgName = ""
+    VideoOption = ""
+
+    def __init__(self, option):
+        self.s = requests.Session()
+        self.s.headers.update({
+            'accept': 'application/json; charset=utf-8',
+            'user-agent': 'SafeGuard Authentication',
+        })
+
+        if option == "hub":
+            self.Username = "safeguard login"
+            self.Password = "safeguard password"
+            self.ProgramID = uuid.UUID('program id').hex
+            self.DownloadLink = "panel download"
+            self.PrintOption = "program.exe"
+            self.ProgName = "program name"
+            self.VideoOption = ""
+        elif option == "vpn":
+            self.Username = "safeguard login"
+            self.Password = "safeguard password"
+            self.ProgramID = uuid.UUID('program id').hex
+            self.DownloadLink = "panel download"
+            self.PrintOption = "program.exe"
+            self.ProgName = "program name"
+            self.VideoOption = ""
+        self.s.headers.update({"username": self.Username})
+        self.s.headers.update({"password": self.Password})
+
+    def AddToken(self, days, level):
+        try:
+            GrabTokenData = self.s.get("https://safeguardauth.us/api//AllTokens")
+            if GrabTokenData.status_code == 200:
+                TokenData = {'ConsumedBy': "",'CreatedBy': "",'Days': int(days),'Id': 0,'ProgramId': self.ProgramID,'Token1': "",'UserLevel': int(level)}
+                GenToken = self.s.put("https://safeguardauth.us/api/AddToken", data=TokenData)
+                if GenToken.status_code == 200:
+                    TokenInfo = GenToken.json()
+                    return f"Register Token: {TokenInfo['Token1']}\n\nExtract the .rar and open {self.PrintOption}\nClick register, and enter a unique user, pass, and email, and your register token provided above\n\n- I'm also offering:\n    - Refer me 6 different people to buy atleast level 1 monthly and i'll give you level 1 lifetime\n\n- Invite your friends here: {InviteLink}\n\n- Make sure to come back after you've the panel and drop an honest rate/review!\n\nHaving issues opening the panel? Check out this video:\n{self.VideoOption}\n\n\nPanel download: {self.DownloadLink}"
+                else: print("No")
+        except Exception as e: print(e)
+
+    def ClearHWID(self, progUser):
+        try:
+            GrabProgramUsers = self.s.get("https://safeguardauth.us/api//ProgramUsers")
+            if GrabProgramUsers.status_code == 200:
+                UserInfo = [user for user in GrabProgramUsers.json() if user['UserName'] == progUser][0]
+                HWIDData = {'HID': str(UserInfo['HID']),'Id': UserInfo['Id'],'ProgramId': self.ProgramID,'UserName': progUser}
+                ResetHWID = self.s.post("https://safeguardauth.us/api/ClearHID", data=HWIDData)
+                if ResetHWID.status_code == 200:
+                    return f"HWID Status: __**RESET**__\n\nUsername: {progUser}\n\nYou may now login!"
+                else: return "HWID Status: __**Not Reset**__\n\nAdmin will have to manually reset HWID\n\nOne moment please."
+        except Exception as e: print(e)
+
+    def UpdatePlan(self, option, progUser, OptionInt):
+        try:
+            GrabProgramUsers = self.s.get("https://safeguardauth.us/api//ProgramUsers")
+            if GrabProgramUsers.status_code == 200:
+                UserInfo = [user for user in GrabProgramUsers.json() if user['UserName'] == progUser][0]
+                PostData = {'AID': UserInfo['AID'],'AmountEarned': UserInfo['AmountEarned'],'Banned': UserInfo['Banned'],'Email': UserInfo['Email'],'ExpirationDate': UserInfo['ExpirationDate'],'FullName': UserInfo['FullName'],'GeneratedAccounts': UserInfo['GeneratedAccounts'],'HID': UserInfo['HID'],'Id': UserInfo['Id'],'IsMobile': UserInfo['IsMobile'],'Level': UserInfo['Level'],'Notifications': UserInfo['Notifications'],'Password': UserInfo['Password'],'ProgramId': self.ProgramID,'ProgramName': self.ProgName,'PurchaseDate': UserInfo['PurchaseDate'],'UserName': UserInfo['UserName']}
+                MessageToReturn = ""
+                if option == "Update":
+                    OldExpiration = datetime.fromisoformat(UserInfo['ExpirationDate'].split('.')[0])
+                    NewExpiration = OldExpiration + timedelta(int(OptionInt))
+                    PostData['ExpirationDate'] = NewExpiration.isoformat()
+                    MessageToReturn = f"Plan Status: __**Updated**__\n\nUsername: {progUser}\nOld Expiration: {OldExpiration}\nNew Expiration: {PostData['ExpirationDate']}\n\nYou may now login!"    
+                elif option == "Ban": 
+                    PostData['Banned'] = True
+                    MessageToReturn = f"Plan Status: __**Banned**__\n\nUsername: {progUser}"
+                elif option == "Unban": 
+                    PostData['Banned'] = False
+                    MessageToReturn = f"Plan Status: __**Unbanned**__\n\nUsername: {progUser}"
+                elif option == "Level": 
+                    PostData['Level'] = OptionInt
+                    MessageToReturn = f"Plan Status: __**Level Updated**__\n\nUsername: {progUser}\nLevel: {OptionInt}"
+
+                UpdateUser = self.s.post("https://safeguardauth.us/api//ProgramUsers", data=PostData)
+                if UpdateUser.status_code == 200: return MessageToReturn
+                else: return "Plan Status: __**Not updated**__\n\nAdmin will have to manually update plan information\n\nOne moment please."
+
+        except Exception as e: print(e)
+
+@bot.event 
+async def on_ready():
+    print("Bot is online")
+
+@bot.event
+async def on_message(message):
+    global autoReply, replyList, GCName
+    if str(message.channel.type) is "group" or str(message.channel.type) is "private": 
+        if DiscordName != str(message.author): 
+            if autoReply:
+                if message.author not in replyList:
+                    await message.channel.send(f"**DiscordName is currently __inactive__**\n\n``What can I do?``\n\n``Please reply with things that include, but are not limited to:\nI need help with: ___\nI'd like to buy: ___\nI have a question about: ___\nTemplate pricing:`` $40-300+\n``Panel Plans:`` $25-400+\n``VPN Plans:`` $10-100\n``Instagram:`` https://www.instagram.com/Instagram\n``Discord Server:`` {InviteLink}")
+                    print(f"Sent auto-reply to {message.author}")
+                    replyList.append(message.author)
+        else: 
+            await bot.process_commands(message)
+            if message.content.split(" ")[0] in cmds: await message.delete()
+        
+
+@bot.command()
+async def payments(self, price=None):
+    if price != None:
+        pricing = discord.Embed(title=f"Payment Information", color=discord.Colour(value=11735575), description="Payment options")
+        pricing.add_field(name="Cashapp", value=f"Please send ${price} to $cashtag [Name]", inline=False)
+        pricing.add_field(name="BTC", value=f"Ask for BTC address, to be able to send and process ${price}", inline=False)
+        pricing.add_field(name="Paypal", value=f"Purchase a ${price} amazon card from: https://www.cheapestgamecards.com\n**OR**\nAsk for paypal email [Small middle man fee]", inline=False)
+        await self.send(embed=pricing)
+    else: await self.send("__**Incorrect Usage**__ Options below:\n\n``.payments [price (USD)]``\n\n")
+
+@bot.command()
+async def api(ctx):
+    apiInfo = discord.Embed(title="Available Plans", color=discord.Colour(value=11735575))
+    apiInfo.add_field(name="Basic", value="$150/month: 600 seconds home method, 250 seconds server method, 10 concurrents")
+    apiInfo.add_field(name="Advanced", value="$175/month: 900 seconds home method, 250 seconds server method, 10 concurrents")
+    apiInfo.add_field(name="Expert", value="$200/month: 1200 seconds home method, 250 seconds server method, 10 concurrents")
+    apiInfo.add_field(name="Home", value="$75/month: 1200 seconds home method, 10 concurrents")
+    apiInfo.add_field(name="Expert", value="$100/month: 250 seconds server method, 10 concurrents")
+    apiInfo.add_field(name="Add-ons", value="$50: +1 concurrent\n$30: +300 home method seconds\n$30: +150 server method seconds")
+    await ctx.send(embed=apiInfo) 
+    
+@bot.command()
+async def hub(ctx):
+    hubInfo = discord.Embed(title="Available Plans", color=discord.Colour(value=11735575))
+    hubInfo.add_field(name="Plan Information", value="Level 1: 600 seconds, 1 con\nLevel 2: 900 seconds, 1 con\nLevel 3: 1200 seconds, 1 con\nLevel 4: 600 seconds, 2 cons\nLevel 5: 900 seconds, 2 cons\nLevel 6: 1200 seconds, 2 cons\nLevel 7: 1200 seconds, 3 cons\nLevel 8: 60-7200 seconds, 1-12 cons\nLevel 9: 5000 seconds, 3 cons", inline=False)
+    hubInfo.add_field(name="Monthly Pricing", value="Level 1: $25\nLevel 2: $30\nLevel 3: $35\nLevel 4: $35\nLevel 5: $40\nLevel 6: $45\nLevel 7: $55\nLevel 8: ???\nLevel 9: $75", inline=False)
+    hubInfo.add_field(name="3 Month Pricing", value="Level 1: $50\nLevel 2: $62.5\nLevel 3: $75\nLevel 4: $75\nLevel 5: $87.5\nLevel 6: $100\nLevel 7: $125\nLevel 8: ???\nLevel 9: $175", inline=False)
+    hubInfo.add_field(name="Lifetime Pricing", value="Level 1: $150\nLevel 2: $175\nLevel 3: $200\nLevel 4: $200\nLevel 5: $225\nLevel 6: $250\nLevel 7: $275\nLevel 8: ????\nLevel 9: $400", inline=False)
+    hubInfo.add_field(name="Other plans", value="**Home Plans**\n600 seconds, 1 con: $15/month $65/lifetime\n900 seconds, 1 con: $20/month $85/lifetime\n1200 seconds, 1 con: $25/month $105/lifetime\n600 seconds, 2 cons: $25/month $105/lifetime\n900 seconds, 2 cons: $35/month $125/lifetime\n1200 seconds, 2 cons: $45/month $150/lifetime\n5000 seconds, 3 cons: $65/month $225/lifetime\n\n**Server Plans**\nPreset server method times (150 secs), 1 con: $20/month $100/lifetime\nPreset server method times (150 secs), 2 cons: $35/month $150/lifetime\nPreset server method times (150 secs), 3 cons: $50/month $200/lifetime", inline=False)
+    hubInfo.add_field(name="Add-ons", value="\n\n**Additional Server Method time:**\n$25/month, $75 lifetime: +150 seconds\n\n**IP Blacklisting:**\n$5/month per IP\n$20 lifetime per IP\n\n**Log Exemption:**\n$25/month, $75/life", inline=False)
+    hubInfo.add_field(name="Additional information", value="Con = Concurrent (# of running attacks possible)", inline=False)
+    await ctx.send(embed=hubInfo) 
+
+@bot.command()
+async def vpn(ctx):
+    vpnInfo = discord.Embed(title="Available Plans", color=discord.Colour(value=11735575))
+    vpnInfo.add_field(name="Level 1", value="All servers: \n$10/month\n$25/3 months\n$40/6 months\n$60/yearly\n$100/lifetime", inline=True)
+    vpnInfo.add_field(name="Level 2", value="1 server of choice:\n$5/month\n$25/year\n$50/lifetime", inline=True)
+    await ctx.send(embed=vpnInfo) 
+
+@bot.command()
+async def token(ctx, option=None, days=None, level=None):
+    if option and days and level != None:
+        await ctx.send(f"----\nInformation: __**Loading**__\n\nPlease wait while your information is being generated\n\nInformation:") 
+        SG = Safeguard(option)
+        Data = SG.AddToken(days, level)
+        if Data == "None": ctx.send("Information: __**Failed**__\n\nPlease manually generate token information\n\n")
+        else: await ctx.send(f"{Data}") 
+    else: await ctx.send("__**Incorrect Usage**__ Options below:\n\n``.token [hub/vpn] [days (1-3650)] [level (1-10)]``\n\n")
+
+@bot.command()
+async def hwid(ctx, option=None, Username=None):
+    if option and Username != None:
+        await ctx.send(f"----\nInformation: __**Loading**__\n\nPlease wait while your HWID is being reset\n\nInformation:") 
+        SG = Safeguard(option)
+        Data = SG.ClearHWID(Username)
+        await ctx.send(f"{Data}") 
+    else: await ctx.send("__**Incorrect Usage**__ Options below:\n\n``.hwid [hub/vpn] [Username]``\n\n")
+
+@bot.command()
+async def updatePlan(ctx, option=None, Username=None, Days=None):
+    if option and Username and Days != None:
+        await ctx.send(f"----\nInformation: __**Loading**__\n\nPlease wait while your info is being updated\n\nInformation:") 
+        SG = Safeguard(option)
+        Data = SG.UpdatePlan("Update", Username, Days)
+        await ctx.send(f"{Data}") 
+    else: await ctx.send("__**Incorrect Usage**__ Options below:\n\n``.updatePlan [hub/vpn] [Username] [Days]``\n\n")
+
+@bot.command()
+async def ban(ctx, option=None, Username=None):
+    if option and Username != None:
+        await ctx.send(f"----\nInformation: __**Loading**__\n\nPlease wait while your info is being updated\n\nInformation:") 
+        SG = Safeguard(option)
+        Data = SG.UpdatePlan("Ban", Username, 0)
+        await ctx.send(f"{Data}") 
+    else: await ctx.send("__**Incorrect Usage**__ Options below:\n\n``.ban [hub/vpn] [Username]``\n\n")
+
+@bot.command()
+async def unban(ctx, option=None, Username=None):
+    if option and Username != None:
+        time.sleep(.75)
+        await ctx.send(f"----\nInformation: __**Loading**__\n\nPlease wait while your info is being updated\n\nInformation:") 
+        SG = Safeguard(option)
+        Data = SG.UpdatePlan("Unban", Username, 0)
+        time.sleep(1.25)
+        await ctx.send(f"{Data}") 
+    else: await ctx.send("__**Incorrect Usage**__ Options below:\n\n``.unban [hub/vpn] [Username]``\n\n")
+
+@bot.command()
+async def updateLevel(ctx, option=None, Username=None, Level=None):
+    if option and Username and Level != None:
+        time.sleep(.75)
+        await ctx.send(f"----\nInformation: __**Loading**__\n\nPlease wait while your info is being updated\n\nInformation:") 
+        SG = Safeguard(option)
+        Data = SG.UpdatePlan("Level", Username, Level)
+        time.sleep(1.25)
+        await ctx.send(f"{Data}") 
+    else: await ctx.send("__**Incorrect Usage**__ Options below:\n\n``.updateLevel [hub/vpn] [Username] [Level]``\n\n")
+
+@bot.command()
+async def contact(ctx):
+    contactInfo = discord.Embed(title="Contact info", color=discord.Colour(value=11735575))
+    contactInfo.add_field(name="Discord Account", value=DiscordName)
+    contactInfo.add_field(name="Discord Server", value=InviteLink)
+    contactInfo.add_field(name="Instagram", value="https://www.instagram.com/hostingtcp")
+    await ctx.send(embed=contactInfo)     
+
+@bot.command()
+async def afk(ctx, option=None):
+    global autoReply, replyList
+    if option != None:
+        afkInfo = discord.Embed(title="AFK Status", color=discord.Colour(value=11735575))
+        if option.lower() == "on": 
+            afkInfo.add_field(name="Auto-reply", value="ON")
+            autoReply = True
+        if option.lower() == "off": 
+            afkInfo.add_field(name="Auto-reply", value="OFF")
+            autoReply = False
+        if option.lower() == "clear": 
+            afkInfo.add_field(name="Auto-reply", value="CLEARED")
+            replyList = []
+    else: afkInfo.add_field(name="Auto-reply", value="You supplied no values dummy boy (.api on/off/clear)")
+    await ctx.send(embed=afkInfo) 
+    
+@bot.command()
+async def options(ctx):
+    helpInfo = discord.Embed(title="Available Commands", color=discord.Colour(value=11735575))
+    helpInfo.add_field(name="Safeguard", value="Token Generation              | .token [hub/vpn] [Days] [Level]\nHWID Reset                    | .hwid [hub/vpn] [Username]\nExpiration Update             | .updatePlan[hub/vpn] [Username] [Days]\nLevel Update                  | .updateLevel [hub/vpn] [Username] [Level]\nBan                           | .ban [hub/vpn] [Username]\nUnban                         | .unban [hub/vpn] [Username]", inline=False)
+    helpInfo.add_field(name="Pricing", value="Payment Information             | .payments [price (USD)]\nAPI Pricing                   | .api\nHub Pricing                   | .hub\nVPN Pricing                   | .vpn", inline=False)
+    helpInfo.add_field(name="Extra", value="Feature List | .options\nContact Information           | .contact\nAuto-reply (AFK)              | .afk [on/off/clear]", inline=False)
+    await ctx.send(embed=helpInfo) 
+
+bot.run(DiscToken, bot=False)
